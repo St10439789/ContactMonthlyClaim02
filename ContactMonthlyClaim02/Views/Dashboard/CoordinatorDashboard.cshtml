@@ -1,0 +1,281 @@
+﻿@{
+    ViewData["Title"] = "Programme Coordinator Dashboard";
+}
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <title>@ViewData["Title"]</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+    <style>
+        body {
+            background-color: lightseagreen;
+        }
+
+        .dashboard-card {
+            margin-top: 40px;
+            padding: 25px;
+            background-color: #fff;
+            border-radius: 12px;
+            box-shadow: 0 0 10px rgba(0,0,0,0.05);
+        }
+
+        .status-approved {
+            color: green !important;
+            font-weight: bold;
+        }
+
+        .status-pending {
+            color: orange !important;
+            font-weight: bold;
+        }
+
+        .status-rejected {
+            color: red !important;
+            font-weight: bold;
+        }
+
+        .btn-back {
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 6px;
+            padding: 8px 16px;
+        }
+
+            .btn-back:hover {
+                background-color: #0056b3;
+            }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        td, th {
+            vertical-align: middle !important;
+            text-align: center;
+        }
+
+        .action-buttons {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="d-flex justify-content-between align-items-center mt-4 mb-4">
+            <h2>📋 Programme Coordinator Dashboard</h2>
+            <a href="/Home/Index" class="btn-back">🏠 Back to Home</a>
+        </div>
+
+        @if (TempData["Message"] != null)
+        {
+            <div class="alert alert-info text-center">@TempData["Message"]</div>
+        }
+
+        <div class="dashboard-card table-responsive">
+            <h5 class="mb-3">Submitted Claims</h5>
+
+            <table class="table table-bordered table-hover align-middle">
+                <thead class="table-light">
+                    <tr>
+                        <th>Claim ID</th>
+                        <th>Lecturer Name</th>
+                        <th>Sessions</th>
+                        <th>Hours</th>
+                        <th>Amount per Session</th>
+                        <th>Total Amount</th>
+                        <th>Submitted Date</th>
+                        <th>Pre-Approved</th>
+                        <th>Pre-Approved Date</th>
+                        <th>Document</th>
+                        <th>Status</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr data-claimid="CLM005">
+                        <td>CLM005</td>
+                        <td>Ayanda Smith</td>
+                        <td>5</td>
+                        <td>10</td>
+                        <td>R110</td>
+                        <td>R550</td>
+                        <td>05 Sep 2025</td>
+                        <td>Yes</td>
+                        <td>03 Sep 2025</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status status-pending">Pending</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-success btn-sm btn-approve">Approve</button>
+                            <button class="btn btn-danger btn-sm btn-reject">Reject</button>
+                        </td>
+                    </tr>
+
+                    <tr data-claimid="CLM007">
+                        <td>CLM007</td>
+                        <td>Nomsa Khumalo</td>
+                        <td>7</td>
+                        <td>14</td>
+                        <td>R90</td>
+                        <td>R630</td>
+                        <td>09 Sep 2025</td>
+                        <td>Yes</td>
+                        <td>06 Sep 2025</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status status-pending">Pending</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-success btn-sm btn-approve">Approve</button>
+                            <button class="btn btn-danger btn-sm btn-reject">Reject</button>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>CLM004</td>
+                        <td>Mary Smith</td>
+                        <td>6</td>
+                        <td>12</td>
+                        <td>R100</td>
+                        <td>R600</td>
+                        <td>01 Aug 2025</td>
+                        <td>Yes</td>
+                        <td>29 Jul 2025</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status-approved">Approved</td>
+                        <td><button class="btn btn-outline-secondary btn-sm" disabled>Approved</button></td>
+                    </tr>
+
+                    <tr>
+                        <td>CLM006</td>
+                        <td>Siyabonga Dlamini</td>
+                        <td>4</td>
+                        <td>8</td>
+                        <td>R120</td>
+                        <td>R480</td>
+                        <td>07 Sep 2025</td>
+                        <td>No</td>
+                        <td>-</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status-rejected">Rejected</td>
+                        <td><button class="btn btn-outline-secondary btn-sm" disabled>Rejected</button></td>
+                    </tr>
+
+                    <!-- Additional Names -->
+                    <tr data-claimid="CLM010">
+                        <td>CLM010</td>
+                        <td>Thando Zuma</td>
+                        <td>8</td>
+                        <td>16</td>
+                        <td>R130</td>
+                        <td>R1040</td>
+                        <td>10 Sep 2025</td>
+                        <td>Yes</td>
+                        <td>08 Sep 2025</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status status-pending">Pending</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-success btn-sm btn-approve">Approve</button>
+                            <button class="btn btn-danger btn-sm btn-reject">Reject</button>
+                        </td>
+                    </tr>
+
+                    <tr data-claimid="CLM011">
+                        <td>CLM011</td>
+                        <td>Jason Mokoena</td>
+                        <td>3</td>
+                        <td>6</td>
+                        <td>R150</td>
+                        <td>R450</td>
+                        <td>11 Sep 2025</td>
+                        <td>No</td>
+                        <td>-</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status status-pending">Pending</td>
+                        <td class="action-buttons">
+                            <button class="btn btn-success btn-sm btn-approve">Approve</button>
+                            <button class="btn btn-danger btn-sm btn-reject">Reject</button>
+                        </td>
+                    </tr>
+
+                    <tr>
+                        <td>CLM012</td>
+                        <td>Lerato Dlamini</td>
+                        <td>9</td>
+                        <td>18</td>
+                        <td>R140</td>
+                        <td>R1260</td>
+                        <td>12 Sep 2025</td>
+                        <td>Yes</td>
+                        <td>10 Sep 2025</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status-approved">Approved</td>
+                        <td><button class="btn btn-outline-secondary btn-sm" disabled>Approved</button></td>
+                    </tr>
+
+                    <tr>
+                        <td>CLM013</td>
+                        <td>Nomvula Ndlovu</td>
+                        <td>2</td>
+                        <td>4</td>
+                        <td>R160</td>
+                        <td>R320</td>
+                        <td>14 Sep 2025</td>
+                        <td>No</td>
+                        <td>-</td>
+                        <td><a href="#">View</a></td>
+                        <td class="status-rejected">Rejected</td>
+                        <td><button class="btn btn-outline-secondary btn-sm" disabled>Rejected</button></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function () {
+            // Approve Button
+            $(".btn-approve").click(function () {
+                if (confirm("Are you sure you want to APPROVE this claim?")) {
+                    const row = $(this).closest("tr");
+                    row.find(".status")
+                        .removeClass("status-pending status-rejected")
+                        .addClass("status-approved")
+                        .text("Approved");
+
+                    row.find(".btn-reject").remove();
+                    $(this)
+                        .removeClass("btn-success")
+                        .addClass("btn-outline-secondary")
+                        .prop("disabled", true)
+                        .text("Approved ✅");
+                }
+            });
+
+            // Reject Button
+            $(".btn-reject").click(function () {
+                if (confirm("Are you sure you want to REJECT this claim?")) {
+                    const row = $(this).closest("tr");
+                    row.find(".status")
+                        .removeClass("status-pending status-approved")
+                        .addClass("status-rejected")
+                        .text("Rejected");
+
+                    row.find(".btn-approve").remove();
+                    $(this)
+                        .removeClass("btn-danger")
+                        .addClass("btn-outline-secondary")
+                        .prop("disabled", true)
+                        .text("Rejected ❌");
+                }
+            });
+        });
+    </script>
+</body>
+</html>
+

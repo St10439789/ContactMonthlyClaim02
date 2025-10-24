@@ -1,0 +1,52 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <title>@ViewData["Title"] - Contract Claim System</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet" />
+    <style>
+        .nav-buttons {
+            margin-left: auto;
+        }
+
+            .nav-buttons a {
+                margin-left: 10px;
+            }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light bg-light shadow-sm">
+        <div class="container-fluid">
+
+            <a class="navbar-brand fw-bold d-flex align-items-center" href="/">
+                <img src="https://cdn-icons-png.flaticon.com/512/3135/3135715.png"
+                     alt="Claim Icon" width="24" height="24" class="me-2" />
+                Contract Claim System
+            </a>
+
+            <div class="nav-buttons d-flex align-items-center">
+                <a href="@Url.Action("LecturerDashboard", "Dashboard")" class="btn btn-outline-secondary btn-sm">
+                    Lecturer Dashboard
+                </a>
+
+                <a href="@Url.Action("CoordinatorDashboard", "Dashboard")" class="btn btn-outline-primary btn-sm">
+                    Coordinator Dashboard
+                </a>
+
+                <a href="@Url.Action("AcademicManagerDashboard", "Dashboard")" class="btn btn-outline-success btn-sm">
+                    Academic Manager Dashboard
+                </a>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        @RenderBody()
+    </div>
+
+    <footer class="text-center text-muted py-3 border-top mt-5">
+        <small>&copy; 2025 Contract Monthly Claim System</small>
+    </footer>
+</body>
+</html>
+

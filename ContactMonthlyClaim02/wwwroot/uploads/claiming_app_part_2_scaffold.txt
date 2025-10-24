@@ -1,0 +1,450 @@
+// Project: ClaimingApp (ASP.NET Core 7 MVC - minimal scaffold for Part 2)
+
+// FILE: Program.cs
+using Microsoft.AspNetCore.Builder;
+using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.EntityFrameworkCore;
+using ClaimingApp.Data;
+using ClaimingApp.Hubs;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Add services
+builder.Services.AddControllersWithViews();
+builder.Services.AddSignalR();
+// Use InMemory DB for easy testing; replace with SQL Server for production
+builder.Services.AddDbContext<ApplicationDbContext>(options => options.UseInMemoryDatabase("ClaimsDb"));
+
+var app = builder.Build();
+
+if (!app.Environment.IsDevelopment())
+{
+    app.UseExceptionHandler("/Home/Error");
+    app.UseHsts();
+}
+
+app.UseHttpsRedirection();
+app.UseStaticFiles();
+
+app.UseRouting();
+
+app.UseAuthorization();
+
+app.MapControllerRoute(
+    name: "default",
+    pattern: "{controller=Claims}/{action=Index}/{id?}");
+
+app.MapHub<ClaimHub>("/claimHub");
+
+// Seed sample data
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
+    if (!db.Claims.Any())
+    {
+        db.Claims.Add(new Models.Claim { LecturerName = "Dr. Alice", HoursWorked = 3, HourlyRate = 150, Notes = "Guest lecture", Status = Models.ClaimStatus.Pending, SubmittedAt = DateTime.UtcNow });
+        db.SaveChanges();
+    }
+}
+
+app.Run();
+
+
+/* ------------------------------- */
+
+// FILE: Data/ApplicationDbContext.cs
+using Microsoft.EntityFrameworkCore;
+using ClaimingApp.Models;
+
+namespace ClaimingApp.Data
+{
+    public class ApplicationDbContext : DbContext
+    {
+        public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options) : base(options) { }
+        public DbSet<Claim> Claims { get; set; }
+        public DbSet<ClaimFile> ClaimFiles { get; set; }
+    }
+}
+
+
+/* ------------------------------- */
+
+// FILE: Models/Claim.cs
+using System.ComponentModel.DataAnnotations;
+
+namespace ClaimingApp.Models
+{
+    public enum ClaimStatus { Pending, Approved, Rejected }
+
+    public class Claim
+    {
+        public int Id { get; set; }
+        [Required] public string LecturerName { get; set; }
+        [Range(0.25, 1000)] public double HoursWorked { get; set; }
+        [Range(0.0, 100000)] public double HourlyRate { get; set; }
+        public string Notes { get; set; }
+        public ClaimStatus Status { get; set; } = ClaimStatus.Pending;
+        public DateTime SubmittedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? ReviewedAt { get; set; }
+        public string Reviewer { get; set; }
+        public ICollection<ClaimFile> Files { get; set; }
+    }
+
+    public class ClaimFile
+    {
+        public int Id { get; set; }
+        public int ClaimId { get; set; }
+        public Claim Claim { get; set; }
+        public string FileName { get; set; }
+        public string FilePath { get; set; }
+        public long Size { get; set; }
+    }
+}
+
+
+/* ------------------------------- */
+
+// FILE: Hubs/ClaimHub.cs
+using Microsoft.AspNetCore.SignalR;
+
+namespace ClaimingApp.Hubs
+{
+    public class ClaimHub : Hub
+    {
+        // Simple hub to broadcast status updates
+        public async Task BroadcastClaimStatus(int claimId, string status)
+        {
+            await Clients.All.SendAsync("ClaimStatusUpdated", claimId, status);
+        }
+    }
+}
+
+
+/* ------------------------------- */
+
+// FILE: Controllers/ClaimsController.cs
+using Microsoft.AspNetCore.Mvc;
+using ClaimingApp.Data;
+using ClaimingApp.Models;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Http;
+using ClaimingApp.Hubs;
+using Microsoft.AspNetCore.SignalR;
+
+namespace ClaimingApp.Controllers
+{
+    public class ClaimsController : Controller
+    {
+        private readonly ApplicationDbContext _db;
+        private readonly IWebHostEnvironment _env;
+        private readonly IHubContext<ClaimHub> _hub;
+        private readonly long _maxFileSize = 5 * 1024 * 1024; // 5 MB
+        private readonly string[] _permittedExtensions = new[] { ".pdf", ".docx", ".xlsx" };
+
+        public ClaimsController(ApplicationDbContext db, IWebHostEnvironment env, IHubContext<ClaimHub> hub)
+        {
+            _db = db; _env = env; _hub = hub;
+        }
+
+        // Lecturer view - submit
+        public async Task<IActionResult> Index()
+        {
+            var claims = await _db.Claims.Include(c => c.Files).OrderByDescending(c => c.SubmittedAt).ToListAsync();
+            return View(claims);
+        }
+
+        public IActionResult Create() => View();
+
+        [HttpPost]
+        [ValidateAntiForgeryToken]
+        public async Task<IActionResult> Create([Bind("LecturerName,HoursWorked,HourlyRate,Notes")] Claim claim, List<IFormFile> uploads)
+        {
+            if (!ModelState.IsValid) return View(claim);
+
+            // basic validation & file handling
+            claim.Status = ClaimStatus.Pending;
+            claim.SubmittedAt = DateTime.UtcNow;
+            claim.Files = new List<ClaimFile>();
+
+            if (uploads != null && uploads.Any())
+            {
+                var uploadsDir = Path.Combine(_env.WebRootPath, "uploads");
+                if (!Directory.Exists(uploadsDir)) Directory.CreateDirectory(uploadsDir);
+
+                foreach (var file in uploads)
+                {
+                    if (file.Length == 0) continue;
+                    if (file.Length > _maxFileSize)
+                    {
+                        ModelState.AddModelError("", $"File {file.FileName} exceeds the size limit ({_maxFileSize} bytes).");
+                        return View(claim);
+                    }
+                    var ext = Path.GetExtension(file.FileName).ToLowerInvariant();
+                    if (!_permittedExtensions.Contains(ext))
+                    {
+                        ModelState.AddModelError("", $"File type {ext} is not allowed.");
+                        return View(claim);
+                    }
+                    var fileName = $"{Guid.NewGuid()}{ext}";
+                    var filePath = Path.Combine(uploadsDir, fileName);
+                    using (var stream = System.IO.File.Create(filePath))
+                    {
+                        await file.CopyToAsync(stream);
+                    }
+                    claim.Files.Add(new ClaimFile { FileName = file.FileName, FilePath = $"/uploads/{fileName}", Size = file.Length });
+                }
+            }
+
+            _db.Claims.Add(claim);
+            await _db.SaveChangesAsync();
+            return RedirectToAction(nameof(Index));
+        }
+
+        // Coordinator/Manager view - pending claims
+        public async Task<IActionResult> Review()
+        {
+            var pending = await _db.Claims.Include(c => c.Files).Where(c => c.Status == ClaimStatus.Pending).OrderBy(c => c.SubmittedAt).ToListAsync();
+            return View(pending);
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Approve(int id, string reviewer)
+        {
+            var claim = await _db.Claims.FindAsync(id);
+            if (claim == null) return NotFound();
+            claim.Status = ClaimStatus.Approved;
+            claim.Reviewer = reviewer ?? "Coordinator";
+            claim.ReviewedAt = DateTime.UtcNow;
+            await _db.SaveChangesAsync();
+            await _hub.Clients.All.SendAsync("ClaimStatusUpdated", claim.Id, claim.Status.ToString());
+            return Json(new { success = true, status = claim.Status.ToString() });
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Reject(int id, string reviewer, string reason)
+        {
+            var claim = await _db.Claims.FindAsync(id);
+            if (claim == null) return NotFound();
+            claim.Status = ClaimStatus.Rejected;
+            claim.Reviewer = reviewer ?? "Coordinator";
+            claim.ReviewedAt = DateTime.UtcNow;
+            claim.Notes = string.IsNullOrWhiteSpace(reason) ? claim.Notes : claim.Notes + "\n\nREJECTION NOTE: " + reason;
+            await _db.SaveChangesAsync();
+            await _hub.Clients.All.SendAsync("ClaimStatusUpdated", claim.Id, claim.Status.ToString());
+            return Json(new { success = true, status = claim.Status.ToString() });
+        }
+
+        public async Task<IActionResult> Details(int id)
+        {
+            var claim = await _db.Claims.Include(c => c.Files).FirstOrDefaultAsync(c => c.Id == id);
+            if (claim == null) return NotFound();
+            return View(claim);
+        }
+    }
+}
+
+
+/* ------------------------------- */
+
+// FILE: Views (Razor) - minimal views to get you started. Save under Views/Claims/*.cshtml
+
+// Views/Claims/Index.cshtml
+@model IEnumerable<ClaimingApp.Models.Claim>
+@{
+    Layout = "_Layout";
+}
+<h2>Your Claims</h2>
+<p><a class="btn btn-primary" href="/Claims/Create">Submit new claim</a></p>
+<table class="table">
+    <thead><tr><th>ID</th><th>Lecturer</th><th>Hours</th><th>Rate</th><th>Status</th><th>Submitted</th><th>Files</th></tr></thead>
+    <tbody>
+    @foreach(var c in Model)
+    {
+        <tr>
+            <td>@c.Id</td>
+            <td>@c.LecturerName</td>
+            <td>@c.HoursWorked</td>
+            <td>@c.HourlyRate</td>
+            <td id="status-@c.Id">@c.Status</td>
+            <td>@c.SubmittedAt.ToLocalTime()</td>
+            <td>
+                @if(c.Files != null && c.Files.Any()){
+                    foreach(var f in c.Files){ <div><a href="@f.FilePath">@f.FileName</a></div> }
+                }
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<script src="/lib/signalr/signalr.js"></script>
+<script>
+    const connection = new signalR.HubConnectionBuilder().withUrl('/claimHub').build();
+    connection.on('ClaimStatusUpdated', (id, status) => {
+        const el = document.getElementById('status-' + id);
+        if (el) el.textContent = status;
+    });
+    connection.start().catch(e => console.error(e));
+</script>
+
+
+// Views/Claims/Create.cshtml
+@model ClaimingApp.Models.Claim
+@{
+    Layout = "_Layout";
+}
+<h2>Submit Claim</h2>
+<form asp-action="Create" method="post" enctype="multipart/form-data">
+    <div class="form-group">
+        <label>Lecturer name</label>
+        <input name="LecturerName" class="form-control" required />
+    </div>
+    <div class="form-group">
+        <label>Hours worked</label>
+        <input name="HoursWorked" type="number" step="0.25" class="form-control" required />
+    </div>
+    <div class="form-group">
+        <label>Hourly rate</label>
+        <input name="HourlyRate" type="number" step="0.01" class="form-control" required />
+    </div>
+    <div class="form-group">
+        <label>Notes</label>
+        <textarea name="Notes" class="form-control"></textarea>
+    </div>
+    <div class="form-group">
+        <label>Supporting documents (pdf, docx, xlsx - max 5MB each)</label>
+        <input name="uploads" type="file" multiple class="form-control" />
+    </div>
+    <button type="submit" class="btn btn-success">Submit Claim</button>
+</form>
+
+
+// Views/Claims/Review.cshtml
+@model IEnumerable<ClaimingApp.Models.Claim>
+@{
+    Layout = "_Layout";
+}
+<h2>Pending Claims (Coordinator / Manager)</h2>
+<table class="table">
+    <thead><tr><th>ID</th><th>Lecturer</th><th>Hours</th><th>Rate</th><th>Submitted</th><th>Files</th><th>Actions</th></tr></thead>
+    <tbody>
+    @foreach(var c in Model)
+    {
+        <tr id="claim-row-@c.Id">
+            <td>@c.Id</td>
+            <td>@c.LecturerName</td>
+            <td>@c.HoursWorked</td>
+            <td>@c.HourlyRate</td>
+            <td>@c.SubmittedAt.ToLocalTime()</td>
+            <td>
+                @if(c.Files != null && c.Files.Any()){
+                    foreach(var f in c.Files){ <div><a href="@f.FilePath">@f.FileName</a></div> }
+                }
+            </td>
+            <td>
+                <button class="btn btn-success" onclick="approve(@c.Id)">Approve</button>
+                <button class="btn btn-danger" onclick="reject(@c.Id)">Reject</button>
+            </td>
+        </tr>
+    }
+    </tbody>
+</table>
+
+<script src="/lib/signalr/signalr.js"></script>
+<script>
+    async function postJson(url, data){
+        const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
+        return r.json();
+    }
+    function approve(id){
+        postJson('/Claims/Approve', { id: id, reviewer: 'Coordinator' }).then(res=>{ if(res.success){ document.getElementById('claim-row-'+id).remove(); } });
+    }
+    function reject(id){
+        const reason = prompt('Reason for rejection (optional)');
+        postJson('/Claims/Reject', { id: id, reviewer: 'Coordinator', reason }).then(res=>{ if(res.success){ document.getElementById('claim-row-'+id).remove(); } });
+    }
+
+    const connection = new signalR.HubConnectionBuilder().withUrl('/claimHub').build();
+    connection.on('ClaimStatusUpdated', (id, status) => {
+        const row = document.getElementById('claim-row-'+id);
+        if(row) row.remove();
+    });
+    connection.start().catch(e=>console.error(e));
+</script>
+
+
+/* ------------------------------- */
+
+// FILE: Views/Shared/_Layout.cshtml (save under Views/Shared)
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>ClaimingApp</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" />
+</head>
+<body class="p-4">
+    <div class="container">
+        <nav class="navbar navbar-expand-lg navbar-light bg-light mb-3">
+            <a class="navbar-brand" href="/Claims">ClaimingApp</a>
+            <div class="navbar-nav">
+                <a class="nav-item nav-link" href="/Claims">My Claims</a>
+                <a class="nav-item nav-link" href="/Claims/Create">Submit</a>
+                <a class="nav-item nav-link" href="/Claims/Review">Review (Coordinator)</a>
+            </div>
+        </nav>
+        @RenderBody()
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>
+
+
+/* ------------------------------- */
+
+// FILE: Tests/ClaimsControllerTests.cs (xUnit)
+using Xunit;
+using ClaimingApp.Controllers;
+using ClaimingApp.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.Hosting;
+using Moq;
+using Microsoft.AspNetCore.SignalR;
+using ClaimingApp.Hubs;
+
+public class ClaimsControllerTests
+{
+    [Fact]
+    public async Task CanCreateClaim()
+    {
+        var opts = new DbContextOptionsBuilder<ApplicationDbContext>().UseInMemoryDatabase("testdb").Options;
+        using var db = new ApplicationDbContext(opts);
+        var envMock = new Mock<IWebHostEnvironment>();
+        envMock.Setup(e => e.WebRootPath).Returns(System.IO.Path.GetTempPath());
+        var hubMock = new Mock<IHubContext<ClaimHub>>();
+
+        var controller = new ClaimsController(db, envMock.Object, hubMock.Object);
+        var claim = new ClaimingApp.Models.Claim { LecturerName = "Test", HoursWorked = 2, HourlyRate = 100 };
+        var result = await controller.Create(claim, null);
+        Assert.Single(db.Claims);
+    }
+}
+
+
+/* ------------------------------- */
+
+// NOTES:
+// - This scaffold implements: lecturer submission form, file upload (with size/type checks), coordinator review with Approve/Reject actions, status tracking, SignalR for live updates, and a simple unit test.
+// - To run: create an ASP.NET Core MVC project, add the files in correct folders, add package references: Microsoft.EntityFrameworkCore.InMemory, Microsoft.AspNetCore.SignalR, xunit, Moq for tests.
+// - Commit at least 5 times as you iterate; use descriptive messages like "Add Claim model", "Add file upload handling", etc.
+// - I kept views minimal and accessible. You can enhance styling and UX (colour scheme, progress bar for status, clearer error pages) as required.
+
+// If you want, I can now:
+// 1) generate full file tree with exact file contents downloadable as a zip,
+// 2) produce step-by-step instructions to add this into your existing project,
+// 3) convert the in-memory DB to SQL Server migrations,
+// 4) add more unit tests.
+

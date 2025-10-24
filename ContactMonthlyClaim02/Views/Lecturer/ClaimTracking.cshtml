@@ -1,0 +1,69 @@
+﻿@model IEnumerable<ContactMonthlyClaim02.Models.Claim>
+
+@{
+    ViewData["Title"] = "Claim Tracking";
+}
+
+<div class="container mt-4">
+    <h3 class="text-center mb-4">📊 Claim Status Tracking</h3>
+
+    <table class="table table-bordered table-striped text-center">
+        <thead class="table-primary">
+            <tr>
+                <th>ID</th>
+                <th>Lecturer</th>
+                <th>Description</th>
+                <th>Date Submitted</th>
+                <th>Status</th>
+                <th>Actions (Coordinator/Manager)</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var claim in Model)
+            {
+                <tr>
+                    <td>@claim.Id</td>
+                    <td>@claim.LecturerName</td>
+                    <td>@claim.ClaimDescription</td> <!-- changed to match Claim.cs property -->
+                    <td>@claim.DateSubmitted.ToShortDateString()</td>
+                    <td>
+                        <span class="badge bg-@(
+                              claim.Status == "Approved" ? "success" :
+                              claim.Status == "Rejected" ? "danger" :
+                              "warning text-dark"
+                                                )" id="status - @claim.Id">@claim.Status</span>
+                </td>
+                <td>
+                    <button class="btn btn-success btn-sm update-status" data-id="@claim.Id" data-status="Approved">Approve</button>
+                    <button class="btn btn-danger btn-sm update-status" data-id="@claim.Id" data-status="Rejected">Reject</button>
+                </td>
+            </tr>
+                        }
+        </tbody>
+    </table>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<script>
+    $(".update-status").click(function () {
+        const claimId = $(this).data("id");
+        const newStatus = $(this).data("status");
+
+        $.post("/Lecturer/UpdateClaimStatus", { id: claimId, status: newStatus }, function (response) {
+            if (response.success) {
+                $("#status-" + claimId)
+                    .text(response.newStatus)
+                    .removeClass("bg-warning bg-success bg-danger text-dark")
+                    .addClass(response.newStatus === "Approved" ? "bg-success" : "bg-danger");
+            } else {
+                alert("❌ Failed to update claim status.");
+            }
+        }).fail(function () {
+            alert("⚠️ Server error. Please try again.");
+        });
+    });
+</script>
+
+
+
