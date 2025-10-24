@@ -45,7 +45,6 @@ public class LecturerController : Controller
             _context.SaveChanges();
         }
 
-        // Return JSON for AJAX real-time update
         return Json(new { success = true, newStatus = status });
     }
 }
